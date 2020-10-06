@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"fmt"
 	"hash"
 	"io"
 	"os"
@@ -21,7 +22,7 @@ type Poster struct {
 }
 
 func (p *Poster) Get(ctx context.Context, input string) (rc io.ReadCloser, err error) {
-	pi := newPosterInstance(input)
+	pi := NewPosterInstance(input)
 	p.sf.Lock(pi.HashName())
 	defer p.sf.Unlock(pi.HashName())
 	stored, err := p.Store.NewInstance(pi.HashName())
@@ -71,7 +72,7 @@ func posterSSArg(ctx context.Context, source string) (ss string, err error) {
 	}
 	d, err := pc.Info.Duration()
 	if err != nil {
-		return
+		return "", fmt.Errorf("getting duration from info: %w", err)
 	}
 	d /= 4
 	ss = strconv.FormatFloat(d.Seconds(), 'f', -1, 64)
@@ -100,7 +101,7 @@ func (me posterInstance) HashName() string {
 	return hex.EncodeToString(hash.Sum(nil)) + ".jpg"
 }
 
-func newPosterInstance(input string) (ret *posterInstance) {
+func NewPosterInstance(input string) (ret *posterInstance) {
 	return &posterInstance{
 		input: input,
 	}
@@ -109,11 +110,11 @@ func newPosterInstance(input string) (ret *posterInstance) {
 func (me *posterInstance) WriteTo(ctx context.Context, w io.Writer) (err error) {
 	ss, err := posterSSArg(ctx, me.input)
 	if err != nil {
-		return
+		return fmt.Errorf("determining -ss arg value: %w", err)
 	}
 	args := []string{
 		"-xerror",
-		"-loglevel", "fatal",
+		"-loglevel", "warning",
 		"-ss", ss,
 	}
 	args = append(args, me.FFMpegArgs()...)
