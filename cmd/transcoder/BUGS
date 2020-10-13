@@ -1,0 +1,1 @@
+* Early termination in HTTP input doesn't abort transcode. https://trac.ffmpeg.org/ticket/4268
