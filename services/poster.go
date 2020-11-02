@@ -21,8 +21,21 @@ type Poster struct {
 	Store resource.Provider
 }
 
-func (p *Poster) Get(ctx context.Context, input string) (rc io.ReadCloser, err error) {
-	pi := NewPosterInstance(input)
+type getPosterOpts func(*posterInstance)
+
+func CustomGetInfo(custom func(ctx context.Context) (ffprobe.Info, error)) getPosterOpts {
+	return func(pi *posterInstance) {
+		pi.customGetInfo = custom
+	}
+}
+
+func (p *Poster) Get(ctx context.Context, input string, opts ...getPosterOpts) (rc io.ReadCloser, err error) {
+	pi := posterInstance{
+		input: input,
+	}
+	for _, opt := range opts {
+		opt(&pi)
+	}
 	p.sf.Lock(pi.HashName())
 	defer p.sf.Unlock(pi.HashName())
 	stored, err := p.Store.NewInstance(pi.HashName())
@@ -54,7 +67,7 @@ func hashStrings(h hash.Hash, ss []string) {
 	}
 }
 
-func posterSSArg(ctx context.Context, source string) (ss string, err error) {
+func (me *posterInstance) defaultGetInfo(ctx context.Context, source string) (info ffprobe.Info, err error) {
 	pc, err := ffprobe.Start(source)
 	if err != nil {
 		return
@@ -70,7 +83,23 @@ func posterSSArg(ctx context.Context, source string) (ss string, err error) {
 	if err != nil {
 		return
 	}
-	d, err := pc.Info.Duration()
+	info = *pc.Info
+	return
+}
+
+func (me *posterInstance) getInfo(ctx context.Context, source string) (ffprobe.Info, error) {
+	if me.customGetInfo != nil {
+		return me.customGetInfo(ctx)
+	}
+	return me.defaultGetInfo(ctx, source)
+}
+
+func (me *posterInstance) ssArg(ctx context.Context, source string) (ss string, err error) {
+	info, err := me.getInfo(ctx, source)
+	if err != nil {
+		return
+	}
+	d, err := info.Duration()
 	if err != nil {
 		return "", fmt.Errorf("getting duration from info: %w", err)
 	}
@@ -80,7 +109,8 @@ func posterSSArg(ctx context.Context, source string) (ss string, err error) {
 }
 
 type posterInstance struct {
-	input string
+	input         string
+	customGetInfo func(context.Context) (ffprobe.Info, error)
 }
 
 func (me posterInstance) FFMpegArgs() []string {
@@ -101,17 +131,15 @@ func (me posterInstance) HashName() string {
 	return hex.EncodeToString(hash.Sum(nil)) + ".jpg"
 }
 
-func NewPosterInstance(input string) (ret *posterInstance) {
-	return &posterInstance{
-		input: input,
-	}
-}
-
 func (me *posterInstance) WriteTo(ctx context.Context, w io.Writer) (err error) {
-	ss, err := posterSSArg(ctx, me.input)
+	ss, err := me.ssArg(ctx, me.input)
 	if err != nil {
 		return fmt.Errorf("determining -ss arg value: %w", err)
 	}
+	return me.WriteToSs(ctx, w, ss)
+}
+
+func (me *posterInstance) WriteToSs(ctx context.Context, w io.Writer, ss string) (err error) {
 	args := []string{
 		"-xerror",
 		"-loglevel", "warning",
