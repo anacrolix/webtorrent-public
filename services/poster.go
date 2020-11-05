@@ -16,6 +16,7 @@ import (
 	"github.com/anacrolix/missinggo/v2/resource"
 )
 
+// Combines poster instances with automatic storage and single-flight into a given store.
 type Poster struct {
 	sf    missinggo.SingleFlight
 	Store resource.Provider
@@ -30,12 +31,7 @@ func CustomGetInfo(custom func(ctx context.Context) (ffprobe.Info, error)) getPo
 }
 
 func (p *Poster) Get(ctx context.Context, input string, opts ...getPosterOpts) (rc io.ReadCloser, err error) {
-	pi := posterInstance{
-		input: input,
-	}
-	for _, opt := range opts {
-		opt(&pi)
-	}
+	pi := NewPosterInstance(input, opts...)
 	p.sf.Lock(pi.HashName())
 	defer p.sf.Unlock(pi.HashName())
 	stored, err := p.Store.NewInstance(pi.HashName())
@@ -129,6 +125,18 @@ func (me posterInstance) HashName() string {
 	hash := md5.New()
 	hashStrings(hash, me.FFMpegArgs())
 	return hex.EncodeToString(hash.Sum(nil)) + ".jpg"
+}
+
+// This is exposed so instances can be generated without having to go through Poster, which includes
+// storage and single-flight management.
+func NewPosterInstance(input string, opts ...getPosterOpts) *posterInstance {
+	ret := posterInstance{
+		input: input,
+	}
+	for _, opt := range opts {
+		opt(&ret)
+	}
+	return &ret
 }
 
 func (me *posterInstance) WriteTo(ctx context.Context, w io.Writer) (err error) {
