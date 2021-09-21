@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"time"
 
 	"github.com/anacrolix/ffprobe"
 	"github.com/anacrolix/missinggo"
@@ -83,6 +84,18 @@ func (me *posterInstance) defaultGetInfo(ctx context.Context, source string) (in
 	return
 }
 
+func (me *posterInstance) Duration(ctx context.Context) (time.Duration, error) {
+	info, err := me.getInfo(ctx, me.input)
+	if err != nil {
+		return 0, err
+	}
+	d, err := info.Duration()
+	if err != nil {
+		return 0, fmt.Errorf("getting duration from info: %w", err)
+	}
+	return d, nil
+}
+
 func (me *posterInstance) getInfo(ctx context.Context, source string) (ffprobe.Info, error) {
 	if me.customGetInfo != nil {
 		return me.customGetInfo(ctx)
@@ -91,11 +104,7 @@ func (me *posterInstance) getInfo(ctx context.Context, source string) (ffprobe.I
 }
 
 func (me *posterInstance) ssArg(ctx context.Context, source string) (ss string, err error) {
-	info, err := me.getInfo(ctx, source)
-	if err != nil {
-		return
-	}
-	d, err := info.Duration()
+	d, err := me.Duration(ctx)
 	if err != nil {
 		return "", fmt.Errorf("getting duration from info: %w", err)
 	}
