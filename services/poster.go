@@ -23,10 +23,10 @@ type Poster struct {
 	Store resource.Provider
 }
 
-type getPosterOpts func(*posterInstance)
+type getPosterOpts func(*PosterInstance)
 
 func CustomGetInfo(custom func(ctx context.Context) (ffprobe.Info, error)) getPosterOpts {
-	return func(pi *posterInstance) {
+	return func(pi *PosterInstance) {
 		pi.customGetInfo = custom
 	}
 }
@@ -64,7 +64,7 @@ func hashStrings(h hash.Hash, ss []string) {
 	}
 }
 
-func (me *posterInstance) defaultGetInfo(ctx context.Context, source string) (info ffprobe.Info, err error) {
+func (me *PosterInstance) defaultGetInfo(ctx context.Context, source string) (info ffprobe.Info, err error) {
 	pc, err := ffprobe.Start(source)
 	if err != nil {
 		return
@@ -84,7 +84,7 @@ func (me *posterInstance) defaultGetInfo(ctx context.Context, source string) (in
 	return
 }
 
-func (me *posterInstance) Duration(ctx context.Context) (time.Duration, error) {
+func (me *PosterInstance) Duration(ctx context.Context) (time.Duration, error) {
 	info, err := me.getInfo(ctx, me.input)
 	if err != nil {
 		return 0, err
@@ -96,14 +96,14 @@ func (me *posterInstance) Duration(ctx context.Context) (time.Duration, error) {
 	return d, nil
 }
 
-func (me *posterInstance) getInfo(ctx context.Context, source string) (ffprobe.Info, error) {
+func (me *PosterInstance) getInfo(ctx context.Context, source string) (ffprobe.Info, error) {
 	if me.customGetInfo != nil {
 		return me.customGetInfo(ctx)
 	}
 	return me.defaultGetInfo(ctx, source)
 }
 
-func (me *posterInstance) ssArg(ctx context.Context, source string) (ss string, err error) {
+func (me *PosterInstance) ssArg(ctx context.Context, source string) (ss string, err error) {
 	d, err := me.Duration(ctx)
 	if err != nil {
 		return "", fmt.Errorf("getting duration from info: %w", err)
@@ -113,12 +113,12 @@ func (me *posterInstance) ssArg(ctx context.Context, source string) (ss string, 
 	return
 }
 
-type posterInstance struct {
+type PosterInstance struct {
 	input         string
 	customGetInfo func(context.Context) (ffprobe.Info, error)
 }
 
-func (me posterInstance) FFMpegArgs() []string {
+func (me PosterInstance) FFMpegArgs() []string {
 	return []string{
 		// Doesn't work with rmvb.
 		// "-skip_frame", "nokey",
@@ -130,7 +130,7 @@ func (me posterInstance) FFMpegArgs() []string {
 	}
 }
 
-func (me posterInstance) HashName() string {
+func (me PosterInstance) HashName() string {
 	hash := md5.New()
 	hashStrings(hash, me.FFMpegArgs())
 	return hex.EncodeToString(hash.Sum(nil)) + ".jpg"
@@ -138,8 +138,8 @@ func (me posterInstance) HashName() string {
 
 // This is exposed so instances can be generated without having to go through Poster, which includes
 // storage and single-flight management.
-func NewPosterInstance(input string, opts ...getPosterOpts) *posterInstance {
-	ret := posterInstance{
+func NewPosterInstance(input string, opts ...getPosterOpts) *PosterInstance {
+	ret := PosterInstance{
 		input: input,
 	}
 	for _, opt := range opts {
@@ -148,7 +148,7 @@ func NewPosterInstance(input string, opts ...getPosterOpts) *posterInstance {
 	return &ret
 }
 
-func (me *posterInstance) WriteTo(ctx context.Context, w io.Writer) (err error) {
+func (me *PosterInstance) WriteTo(ctx context.Context, w io.Writer) (err error) {
 	ss, err := me.ssArg(ctx, me.input)
 	if err != nil {
 		return fmt.Errorf("determining -ss arg value: %w", err)
@@ -156,7 +156,7 @@ func (me *posterInstance) WriteTo(ctx context.Context, w io.Writer) (err error) 
 	return me.WriteToSs(ctx, w, ss)
 }
 
-func (me *posterInstance) WriteToSs(ctx context.Context, w io.Writer, ss string) (err error) {
+func (me *PosterInstance) WriteToSs(ctx context.Context, w io.Writer, ss string) (err error) {
 	args := []string{
 		"-xerror",
 		"-loglevel", "warning",
