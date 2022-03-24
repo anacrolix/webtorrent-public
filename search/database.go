@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"crawshaw.io/sqlite"
-	"crawshaw.io/sqlite/sqlitex"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/tracker/udp"
 	"github.com/dustin/go-humanize"
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
 func DatabaseInfos(ctx context.Context, conn *sqlite.Conn, query string) (ret Result) {

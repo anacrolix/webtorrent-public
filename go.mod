@@ -13,4 +13,5 @@ require (
 	github.com/anacrolix/torrent v1.41.0
 	github.com/dustin/go-humanize v1.0.0
 	github.com/stretchr/testify v1.7.0
+	zombiezen.com/go/sqlite v0.8.0
 )
