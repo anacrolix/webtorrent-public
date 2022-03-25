@@ -27,6 +27,12 @@ type ResultItem struct {
 	Age                    interface{}
 	OriginTag              string
 	Trusted                bool
+	// List of file extensions
+	Tags []string
+	// Distinguish missing tags and just no tags
+	TagsOk bool
+	// Whether the file is "good" for purpose
+	VeryNice bool
 }
 
 func (sr ResultItem) InfoHash() metainfo.Hash {

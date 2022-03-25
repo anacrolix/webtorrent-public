@@ -4,9 +4,14 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"log"
+	"path"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/tracker/udp"
 	"github.com/dustin/go-humanize"
@@ -55,6 +60,10 @@ func DatabaseInfos(ctx context.Context, conn *sqlite.Conn, query string) (ret Re
 			if err != nil {
 				panic(fmt.Errorf("parsing infohash hex %q: %w", infohashHex, err))
 			}
+			infoFiles, _, err := infoFilesFromDatabase(conn, m.InfoHash)
+			exts := sort.StringSlice(mapStringEmptyStructToSlice(infoDistinctFileExts(infoFiles)))
+			exts.Sort()
+			veryNice := infoLargestFileExt(infoFiles) == ".mp4"
 			ret.Items = append(ret.Items, ResultItem{
 				Name:                   infoName,
 				Magnet:                 m.String(),
@@ -71,6 +80,9 @@ func DatabaseInfos(ctx context.Context, conn *sqlite.Conn, query string) (ret Re
 				},
 				NoSwarmInfo: stmt.ColumnInt64(7) == 0,
 				Size:        size,
+				Tags:        exts,
+				TagsOk:      true,
+				VeryNice:    veryNice,
 			})
 			return nil
 		}, query)
@@ -101,4 +113,80 @@ func escapeQuery(s string) string {
 
 func nonBreakingSpaces(s string) string {
 	return strings.ReplaceAll(s, " ", "&nbsp;")
+}
+
+func infoLargestFileExt(info infoFiles) string {
+	var ret string
+	var largest int64
+	for _, f := range info.Files {
+		if f.Length >= largest {
+			ret = path.Ext(f.DisplayPath)
+			largest = f.Length
+		}
+	}
+	return ret
+}
+
+func mapStringEmptyStructToSlice(m map[string]struct{}) (ret []string) {
+	for s := range m {
+		ret = append(ret, s)
+	}
+	return
+}
+
+// The files-only part of a torrent info.
+type infoFiles struct {
+	Name  string
+	Files []infoFile
+}
+
+type infoFile struct {
+	Length      int64
+	DisplayPath string
+}
+
+func infoFilesFromDatabase(c *sqlite.Conn, ih torrent.InfoHash) (ret infoFiles, ok bool, err error) {
+	err = sqlitex.Exec(c, `
+		select name
+		from info where infohash_hex=?`,
+		func(stmt *sqlite.Stmt) error {
+			ok = true
+			ret.Name = stmt.ColumnText(0)
+			return nil
+		},
+		ih.HexString(),
+	)
+	if err != nil {
+		return
+	}
+	if !ok {
+		return
+	}
+	err = sqlitex.Exec(c, `
+		select length, path from info_file where info_id=(select info_id from info where infohash_hex=?) order by file_index`,
+		func(stmt *sqlite.Stmt) error {
+			dp := ret.Name
+			if stmt.ColumnType(1) != sqlite.TypeNull {
+				dp = stmt.ColumnText(1)
+			}
+			ret.Files = append(ret.Files, infoFile{
+				Length:      stmt.ColumnInt64(0),
+				DisplayPath: dp,
+			})
+			return nil
+		},
+		ih.HexString())
+	return
+}
+
+func infoDistinctFileExts(info infoFiles) (exts map[string]struct{}) {
+	exts = make(map[string]struct{})
+	for _, f := range info.Files {
+		ext := path.Ext(f.DisplayPath)
+		if regexp.MustCompile(`\.r\d{2}`).MatchString(ext) {
+			continue
+		}
+		exts[ext] = struct{}{}
+	}
+	return
 }
