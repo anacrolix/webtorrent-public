@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"html/template"
-	"log"
 	"path"
 	"regexp"
 	"sort"
@@ -19,33 +18,37 @@ import (
 	"zombiezen.com/go/sqlite/sqlitex"
 )
 
-func DatabaseInfos(ctx context.Context, conn *sqlite.Conn, query string) (ret Result) {
-	query = escapeQuery(query)
+type InfosQuery struct {
+	Query  string
+	Limit  int
+	Offset int
+	DoTags bool
+}
+
+func DatabaseInfos(ctx context.Context, conn *sqlite.Conn, iq InfosQuery) (ret Result) {
+	query := escapeQuery(iq.Query)
+	// This version of the query requires that info_fts be clustered by the intended result
+	// ordering, such as seeders desc, length desc.
+	conn.SetInterrupt(ctx.Done())
 	ret.Err = sqlitex.Exec(conn, `
         with
-            match_info_hash as (
+            matched_info_id as (
                 select distinct info_file.info_id
-                from info_fts(?, 'bm(2,1)')
+                from info_fts(?)
                 join info_file on info_fts.rowid=info_file.rowid
-				limit 100000), -- We can't limit on final_info, because it will scan trying to find scrape_datetime is not null
-            match_info as (
-                select * from info where info_id in match_info_hash),
-            final_info as (
-                select * from match_info where scrape_datetime is not null
-                union all select * from (
-					select * from match_info where scrape_datetime is null limit 222))
+				limit ? offset ? ), 
+            matched_info as (
+                select * from info where info_id in matched_info_id )
         select
             infohash_hex,
             name,
             obtained_datetime,
-            (select sum(length) from info_file where info_file.info_id=final_info.info_id),
+            (select sum(length) from info_file where info_file.info_id=matched_info.info_id),
             completed,
             leechers,
             seeders,
 			scrape_datetime is not null
-        from final_info
-		order by seeders desc
-		limit 100`,
+        from matched_info`,
 		func(stmt *sqlite.Stmt) error {
 			infohashHex := stmt.ColumnText(0)
 			infoName := stmt.ColumnText(1)
@@ -60,10 +63,17 @@ func DatabaseInfos(ctx context.Context, conn *sqlite.Conn, query string) (ret Re
 			if err != nil {
 				panic(fmt.Errorf("parsing infohash hex %q: %w", infohashHex, err))
 			}
-			infoFiles, _, err := infoFilesFromDatabase(conn, m.InfoHash)
-			exts := sort.StringSlice(mapStringEmptyStructToSlice(infoDistinctFileExts(infoFiles)))
-			exts.Sort()
-			veryNice := infoLargestFileExt(infoFiles) == ".mp4"
+			var exts sort.StringSlice
+			var veryNice bool
+			if iq.DoTags {
+				infoFiles, _, err := infoFilesFromDatabase(conn, m.InfoHash)
+				if err != nil {
+					panic(err)
+				}
+				exts = mapStringEmptyStructToSlice(infoDistinctFileExts(infoFiles))
+				exts.Sort()
+				veryNice = infoLargestFileExt(infoFiles) == ".mp4"
+			}
 			ret.Items = append(ret.Items, ResultItem{
 				Name:                   infoName,
 				Magnet:                 m.String(),
@@ -81,24 +91,26 @@ func DatabaseInfos(ctx context.Context, conn *sqlite.Conn, query string) (ret Re
 				NoSwarmInfo: stmt.ColumnInt64(7) == 0,
 				Size:        size,
 				Tags:        exts,
-				TagsOk:      true,
+				TagsOk:      iq.DoTags,
 				VeryNice:    veryNice,
 			})
 			return nil
-		}, query)
+		}, query, iq.Limit, iq.Offset)
 	if ret.Err == nil {
-		ret.Err = sqlitex.Exec(conn, `
-			select count(*) from (
-				select distinct info_file.info_id
-				from info_fts(?)
-				join info_file on info_fts.rowid=info_file.rowid
-			)`,
-			func(stmt *sqlite.Stmt) error {
-				ret.Total = stmt.ColumnInt64(0)
-				return nil
-			},
-			query,
-		)
+		ret.Total = int64(len(ret.Items))
+		// This is too expensive to calculate!
+		//ret.Err = sqlitex.Exec(conn, `
+		//	select count(1) from (
+		//		select distinct info_file.info_id
+		//		from info_fts(?)
+		//		join info_file on info_fts.rowid=info_file.rowid
+		//	)`,
+		//	func(stmt *sqlite.Stmt) error {
+		//		ret.Total = stmt.ColumnInt64(0)
+		//		return nil
+		//	},
+		//	query,
+		//)
 	}
 	return
 }
