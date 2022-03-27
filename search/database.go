@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
@@ -26,7 +27,7 @@ type InfosQuery struct {
 }
 
 func DatabaseInfos(ctx context.Context, conn *sqlite.Conn, iq InfosQuery) (ret Result) {
-	query := escapeQuery(iq.Query)
+	query := EscapeQuery(iq.Query)
 	// This version of the query requires that info_fts be clustered by the intended result
 	// ordering, such as seeders desc, length desc.
 	conn.SetInterrupt(ctx.Done())
@@ -115,8 +116,19 @@ func DatabaseInfos(ctx context.Context, conn *sqlite.Conn, iq InfosQuery) (ret R
 	return
 }
 
-func escapeQuery(s string) string {
-	fs := strings.Fields(s)
+// Escape query for use as a sqlite FTS5 query.
+func EscapeQuery(s string) string {
+	fs := strings.FieldsFunc(s, func(r rune) bool {
+		switch r {
+		// From info_fts' tokenize tokenchars argument
+		case '&', '-', '\'':
+			return false
+		}
+		// sqlite FTS5 4.3.1. Unicode61 Tokenizer: "By default all space and punctuation characters,
+		// as defined by Unicode 6.1, are considered separators, and all other characters as token
+		// characters."
+		return unicode.IsSpace(r) || unicode.IsPunct(r)
+	})
 	for i, f := range fs {
 		fs[i] = fmt.Sprintf(`"%s"`, strings.ReplaceAll(f, `"`, `""`))
 	}
