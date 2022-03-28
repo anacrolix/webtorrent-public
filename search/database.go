@@ -37,9 +37,10 @@ func DatabaseInfos(ctx context.Context, conn *sqlite.Conn, iq InfosQuery) (ret R
                 select distinct info_file.info_id
                 from info_fts(?)
                 join info_file on info_fts.rowid=info_file.rowid
+				order by info_fts.rowid desc
 				limit ? offset ? ), 
             matched_info as (
-                select * from info where info_id in matched_info_id )
+                select * from matched_info_id join info using (info_id) )
         select
             infohash_hex,
             name,
