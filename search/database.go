@@ -65,16 +65,25 @@ func DatabaseInfos(ctx context.Context, conn *sqlite.Conn, iq InfosQuery) (ret R
 			if err != nil {
 				panic(fmt.Errorf("parsing infohash hex %q: %w", infohashHex, err))
 			}
-			var exts sort.StringSlice
-			var veryNice bool
+			var exts []string
 			if iq.DoTags {
 				infoFiles, _, err := infoFilesFromDatabase(conn, m.InfoHash)
 				if err != nil {
 					panic(err)
 				}
-				exts = mapStringEmptyStructToSlice(infoDistinctFileExts(infoFiles))
-				exts.Sort()
-				veryNice = infoLargestFileExt(infoFiles) == ".mp4"
+				sort.Slice(infoFiles.Files, func(i, j int) bool {
+					return infoFiles.Files[i].Length > infoFiles.Files[j].Length
+				})
+				seensExts := make(map[string]bool)
+				exts = make([]string, 0, len(infoFiles.Files))
+				for _, f := range infoFiles.Files {
+					ext := path.Ext(f.DisplayPath)
+					if seensExts[ext] {
+						continue
+					}
+					seensExts[ext] = true
+					exts = append(exts, ext)
+				}
 			}
 			ret.Items = append(ret.Items, ResultItem{
 				Name:                   infoName,
@@ -94,7 +103,6 @@ func DatabaseInfos(ctx context.Context, conn *sqlite.Conn, iq InfosQuery) (ret R
 				Size:        size,
 				Tags:        exts,
 				TagsOk:      iq.DoTags,
-				VeryNice:    veryNice,
 			})
 			return nil
 		}, query, iq.Limit, iq.Offset)

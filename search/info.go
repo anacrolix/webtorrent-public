@@ -27,15 +27,20 @@ type ResultItem struct {
 	Age                    interface{}
 	OriginTag              string
 	Trusted                bool
-	// List of file extensions
+	// List of file extensions ordered by largest file length desc
 	Tags []string
 	// Distinguish missing tags and just no tags
 	TagsOk bool
-	// Whether the file is "good" for purpose
-	VeryNice bool
 }
 
 func (sr ResultItem) InfoHash() metainfo.Hash {
 	m, _ := metainfo.ParseMagnetUri(sr.Magnet)
 	return m.InfoHash
+}
+
+func (sr ResultItem) VeryNice() bool {
+	if len(sr.Tags) < 1 {
+		return false
+	}
+	return sr.Tags[0] == ".mp4"
 }
