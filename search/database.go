@@ -78,6 +78,14 @@ func DatabaseInfos(ctx context.Context, conn *sqlite.Conn, iq InfosQuery) (ret R
 				exts = make([]string, 0, len(infoFiles.Files))
 				for _, f := range infoFiles.Files {
 					ext := path.Ext(f.DisplayPath)
+					if ext == "" {
+						continue
+					}
+					ext = ext[1:]
+					if strings.TrimLeftFunc(ext, unicode.IsSpace) != ext {
+						continue
+					}
+					ext = strings.ToLower(ext)
 					if seensExts[ext] {
 						continue
 					}
