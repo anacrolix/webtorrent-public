@@ -37,7 +37,7 @@ func DatabaseInfos(ctx context.Context, conn *sqlite.Conn, iq InfosQuery) (ret R
                 select distinct info_file.info_id
                 from info_fts(?)
                 join info_file on info_fts.rowid=info_file.rowid
-				order by info_fts.rowid desc
+				order by info_fts.rowid
 				limit ? offset ? ), 
             matched_info as (
                 select * from matched_info_id join info using (info_id) )
