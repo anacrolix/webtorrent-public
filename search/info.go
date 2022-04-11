@@ -42,5 +42,5 @@ func (sr ResultItem) VeryNice() bool {
 	if len(sr.Tags) < 1 {
 		return false
 	}
-	return sr.Tags[0] == ".mp4"
+	return sr.Tags[0] == "mp4"
 }
