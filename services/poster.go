@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -164,6 +165,9 @@ func (me *PosterInstance) WriteToSs(ctx context.Context, w io.Writer, ss string)
 	}
 	args = append(args, me.FFMpegArgs()...)
 	cmd := exec.Command("ffmpeg", args...)
+	if errors.Is(cmd.Err, exec.ErrDot) {
+		cmd.Err = nil
+	}
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = w
 	err = cmd.Start()

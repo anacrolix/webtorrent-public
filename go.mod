@@ -1,6 +1,6 @@
 module github.com/anacrolix/webtorrent-public
 
-go 1.17
+go 1.19
 
 require (
 	github.com/anacrolix/envpprof v1.2.1
