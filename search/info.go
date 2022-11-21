@@ -16,7 +16,7 @@ type Result struct {
 // Represents a single search result item.
 type ResultItem struct {
 	Name        string
-	Magnet      string
+	Magnet      template.URL
 	SwarmInfo   udp.ScrapeInfohashResult
 	NoSwarmInfo bool
 	// The search result page on the origin.
@@ -34,7 +34,7 @@ type ResultItem struct {
 }
 
 func (sr ResultItem) InfoHash() metainfo.Hash {
-	m, _ := metainfo.ParseMagnetUri(sr.Magnet)
+	m, _ := metainfo.ParseMagnetUri(string(sr.Magnet))
 	return m.InfoHash
 }
 
