@@ -98,8 +98,10 @@ func transcode(url, tempFilePath, logPath, outputName string, args []string, upd
 
 	os.MkdirAll(filepath.Dir(logPath), 0750)
 	// Log files are left behind by failed runs, so don't try again if it
-	// already exists.
-	logFile, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0666)
+	// already exists. TODO: Open a temporary log path, then move over to the path that should be
+	// checked for previous failed runs after running the transcode to completion (failure or
+	// success).
+	logFile, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
 		return err
 	}
