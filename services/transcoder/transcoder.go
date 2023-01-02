@@ -1,6 +1,7 @@
 package transcoder
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -19,9 +20,11 @@ import (
 	"github.com/anacrolix/missinggo/pubsub"
 	"github.com/anacrolix/missinggo/v2/resource"
 	"github.com/dustin/go-humanize"
+	"nhooyr.io/websocket"
+	"nhooyr.io/websocket/wsjson"
 )
 
-//54228
+// 54228
 func hashStrings(ss []string) []byte {
 	h := md5.New()
 	for _, s := range ss {
@@ -233,31 +236,38 @@ func (t *Transcoder) serveProgress(w http.ResponseWriter, r *http.Request, outpu
 	}
 }
 
-func (t *Transcoder) serveEvents(w http.ResponseWriter, r *http.Request) {
+func (t *Transcoder) serveEvents(w http.ResponseWriter, r *http.Request, outputName string, outputLoc resource.Instance) {
 	sub := t.events.Subscribe()
 	defer sub.Close()
-	e := json.NewEncoder(w)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
+	conn, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		log.Printf("error accepting transcoder events websocket: %v", err)
+		return
 	}
+	defer conn.Close(websocket.StatusGoingAway, "deferred close")
+	writeProgress := func() {
+		p := t.getProgress(outputLoc, outputName)
+		err := wsjson.Write(context.TODO(), conn, p)
+		switch err {
+		case io.ErrClosedPipe:
+		case nil:
+		default:
+			log.Printf("error encoding transcoder event: %s", err)
+		}
+	}
+	writeProgress()
 	for {
 		select {
 		case v, ok := <-sub.Values:
+			// Last I checked the pubsub just receives dummy values, to notify of an event on all
+			// operations.
+			if v != struct{}{} {
+				panic(v)
+			}
 			if !ok {
 				panic("subscription closed")
 			}
-			err := e.Encode(v)
-			switch err {
-			case io.ErrClosedPipe:
-			case nil:
-			default:
-				log.Printf("error encoding transcoder event: %s", err)
-			}
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
-			}
+			writeProgress()
 		case <-r.Context().Done():
 			return
 		}
@@ -265,10 +275,6 @@ func (t *Transcoder) serveEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (t *Transcoder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/events" {
-		t.serveEvents(w, r)
-		return
-	}
 	q := r.URL.Query()
 	i := reencodeURL(q.Get("i"))
 	f := q.Get("f")
@@ -280,8 +286,8 @@ func (t *Transcoder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad output location", http.StatusInternalServerError)
 		return
 	}
-	if len(q["progress"]) != 0 {
-		t.serveProgress(w, r, outputName, outputLoc)
+	if r.URL.Path == "/events" {
+		t.serveEvents(w, r, outputName, outputLoc)
 		return
 	}
 	// Ensure no-one else is operating on this outputName.

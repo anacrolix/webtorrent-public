@@ -12,6 +12,7 @@ require (
 	github.com/anacrolix/torrent v1.47.0
 	github.com/dustin/go-humanize v1.0.0
 	github.com/stretchr/testify v1.8.0
+	nhooyr.io/websocket v1.8.7
 )
 
 require (
@@ -21,6 +22,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/google/btree v1.1.2 // indirect
 	github.com/huandu/xstrings v1.3.2 // indirect
+	github.com/klauspost/compress v1.10.3 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/ryszard/goskiplist v0.0.0-20150312221310-2dfbae5fcf46 // indirect
