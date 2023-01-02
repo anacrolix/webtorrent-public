@@ -90,6 +90,7 @@ func (t *Transcoder) transcode(outputName, inputURL string, opts []string) (err 
 	op := &operation{
 		sendEvent: func() { t.events.Publish(struct{}{}) },
 	}
+	defer op.sendEvent()
 	t.mu.Lock()
 	// The operation needs to be visible for progress operations?
 	t.operations[outputName] = op
