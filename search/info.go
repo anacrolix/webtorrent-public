@@ -24,6 +24,7 @@ type ResultItem struct {
 	// The origin URL but from a source we trust to return from a executed template.
 	TrustedOriginResultUrl template.URL
 	Size                   string
+	SizeNum                int64
 	Age                    interface{}
 	OriginTag              string
 	Trusted                bool
