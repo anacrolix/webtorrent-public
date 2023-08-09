@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anacrolix/ffprobe"
+	"github.com/anacrolix/log"
 	"github.com/anacrolix/missinggo/perf"
 )
 
