@@ -1,6 +1,7 @@
 package transcoder
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -108,6 +109,9 @@ func transcode(url, tempFilePath, logPath, outputName string, args []string, upd
 	defer logFile.Close()
 
 	cmd := exec.Command(args[0], args[1:]...)
+	if errors.Is(cmd.Err, exec.ErrDot) {
+		cmd.Err = nil
+	}
 	cmd.Stderr = logFile
 	log.Printf("invoking %q", args)
 	started := time.Now()
