@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -56,21 +57,25 @@ func reencodeURL(s string) string {
 	return url_.String()
 }
 
-func ffmpegArgs(tempFilePath, progressListenerUrl, outputName, outputFilePath string, transcodeOpts []string) []string {
-	return append(
-		[]string{"nice", "ffmpeg", "-hide_banner", "-i", tempFilePath},
-		append(
-			transcodeOpts,
-			"-progress", (&url.URL{
-				Scheme: "http",
-				Host:   progressListenerUrl,
-				Path:   "/",
-				RawQuery: (url.Values{
-					"id": {outputName},
-				}).Encode(),
-			}).String(), "-y", outputFilePath,
-		)...,
-	)
+func ffmpegArgs(tempFilePath, progressListenerUrl, outputName, outputFilePath string, transcodeOpts []string) (ret []string) {
+	_, err := exec.LookPath("nice")
+	if err == nil {
+		// Windows does not have nice (things lol).
+		ret = append(ret, "nice")
+	}
+	ret = append(ret, "ffmpeg", "-hide_banner", "-i", tempFilePath)
+	ret = append(ret, transcodeOpts...)
+	ret = append(ret,
+		"-progress", (&url.URL{
+			Scheme: "http",
+			Host:   progressListenerUrl,
+			Path:   "/",
+			RawQuery: (url.Values{
+				"id": {outputName},
+			}).Encode(),
+		}).String(),
+		"-y", outputFilePath)
+	return
 }
 
 func progressUpdater(op *operation) func(func(*Progress)) {
