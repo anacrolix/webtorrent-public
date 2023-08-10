@@ -2,9 +2,10 @@ package transcoder
 
 import (
 	"bufio"
-	"log"
 	"net/http"
 	"strings"
+
+	"github.com/anacrolix/log"
 )
 
 type progressHandler struct {

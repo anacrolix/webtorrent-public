@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"net/http"
 
 	_ "github.com/anacrolix/envpprof"
@@ -14,7 +13,6 @@ import (
 )
 
 func main() {
-	log.SetFlags(log.Flags() | log.Lshortfile)
 	var args = struct {
 		Addr string
 	}{
