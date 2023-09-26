@@ -25,13 +25,18 @@ import (
 	"nhooyr.io/websocket/wsjson"
 )
 
+var hashStringsSize = md5.Size
+
 // 54228
 func hashStrings(ss []string) []byte {
 	h := md5.New()
+	var b []byte
 	for _, s := range ss {
+		b = h.Sum(b[:0])
+		h.Write(b)
 		h.Write([]byte(s))
 	}
-	return h.Sum(nil)
+	return h.Sum(b[:0])
 }
 
 func (t *Transcoder) cacheFile(name string) (err error) {
