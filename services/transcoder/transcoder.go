@@ -62,14 +62,19 @@ func reencodeURL(s string) string {
 	return url_.String()
 }
 
-func ffmpegArgs(tempFilePath, progressListenerUrl, outputName, outputFilePath string, transcodeOpts []string) (ret []string) {
+func ffmpegArgs(
+	tempFilePath, progressListenerUrl, outputName, outputFilePath string,
+	outputOpts, inputOpts []string,
+) (ret []string) {
 	_, err := exec.LookPath("nice")
 	if err == nil {
 		// Windows does not have nice (things lol).
 		ret = append(ret, "nice")
 	}
-	ret = append(ret, "ffmpeg", "-hide_banner", "-i", tempFilePath)
-	ret = append(ret, transcodeOpts...)
+	ret = append(ret, "ffmpeg", "-hide_banner")
+	ret = append(ret, inputOpts...)
+	ret = append(ret, "-i", tempFilePath)
+	ret = append(ret, outputOpts...)
 	ret = append(ret,
 		"-progress", (&url.URL{
 			Scheme: "http",
@@ -83,20 +88,23 @@ func ffmpegArgs(tempFilePath, progressListenerUrl, outputName, outputFilePath st
 	return
 }
 
-func progressUpdater(op *operation) func(func(*Progress)) {
-	return func(f func(*Progress)) {
-		op.mu.Lock()
-		defer op.mu.Unlock()
-		before := op.Progress
-		f(&op.Progress)
-		if op.Progress != before {
-			// log.Printf("%#v", op.Progress)
-			op.sendEvent()
-		}
+func (op *operation) updateProgress(f func(p *Progress)) {
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	before := op.Progress
+	f(&op.Progress)
+	if op.Progress != before {
+		// log.Printf("%#v", op.Progress)
+		op.sendEvent()
 	}
 }
 
-func (t *Transcoder) transcode(ctx context.Context, outputName, inputURL string, opts []string) (err error) {
+func (t *Transcoder) transcode(
+	ctx context.Context,
+	outputName,
+	inputURL string,
+	opts, iopts []string,
+) (err error) {
 	op := &operation{
 		sendEvent: func() { t.events.Publish(struct{}{}) },
 	}
@@ -127,8 +135,9 @@ func (t *Transcoder) transcode(ctx context.Context, outputName, inputURL string,
 			outputName,
 			outputFilePath,
 			opts,
+			iopts,
 		),
-		progressUpdater(op),
+		op.updateProgress,
 	)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -148,6 +157,12 @@ func (t *Transcoder) transcode(ctx context.Context, outputName, inputURL string,
 	}())
 	started := time.Now()
 	go t.cacheFile(outputLogFilePath)
+	op.updateProgress(func(p *Progress) {
+		p.Storing = true
+	})
+	defer op.updateProgress(func(p *Progress) {
+		p.Storing = false
+	})
 	err = t.cacheFile(outputFilePath)
 	if err != nil {
 		return
@@ -191,7 +206,7 @@ func (t *Transcoder) Init() {
 		if op == nil {
 			return
 		}
-		progressUpdater(op)(func(p *Progress) {
+		op.updateProgress(func(p *Progress) {
 			p.ConvertPos = parseProgressInfoOutTime(value)
 		})
 	}
@@ -299,7 +314,12 @@ func (t *Transcoder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	i := reencodeURL(q.Get("i"))
 	f := q.Get("f")
 	opts := q["opt"]
-	outputName := fmt.Sprintf("%x.%s", hashStrings(append([]string{i}, opts...)), f)
+	iopts := q["iopt"]
+	outputName := fmt.Sprintf(
+		"%x.%s",
+		hashStrings(append(iopts, append(opts, i)...)),
+		f,
+	)
 	outputLoc, err := t.RP.NewInstance(outputName)
 	if err != nil {
 		log.Print(err)
@@ -319,7 +339,7 @@ func (t *Transcoder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r.Context(),
 			outputName,
 			func(ctx context.Context) (_ struct{}, err error) {
-				err = t.transcode(ctx, outputName, i, opts)
+				err = t.transcode(ctx, outputName, i, opts, iopts)
 				if err != nil {
 					log.Printf("error transcoding %q: %s", outputName, err)
 				}
