@@ -1,6 +1,7 @@
 package transcoder
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -83,7 +84,12 @@ func updateDownloadProgress(f func(func(*Progress))) func(float64) {
 	}
 }
 
-func transcode(url, tempFilePath, logPath, outputName string, args []string, updateProgress func(func(*Progress))) error {
+func transcode(
+	ctx context.Context,
+	url, tempFilePath, logPath, outputName string,
+	args []string,
+	updateProgress func(func(*Progress)),
+) error {
 	updateProgress(func(p *Progress) {
 		p.Downloading = true
 	})
@@ -108,7 +114,7 @@ func transcode(url, tempFilePath, logPath, outputName string, args []string, upd
 	}
 	defer logFile.Close()
 
-	cmd := exec.Command(args[0], args[1:]...)
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	if errors.Is(cmd.Err, exec.ErrDot) {
 		cmd.Err = nil
 	}
@@ -116,7 +122,7 @@ func transcode(url, tempFilePath, logPath, outputName string, args []string, upd
 	log.Printf("invoking %q", args)
 	started := time.Now()
 	defer func() {
-		log.Printf("%s took %s", outputName, time.Since(started))
+		log.Printf("%v ran for %v", outputName, time.Since(started))
 		updateProgress(func(p *Progress) {
 			p.Converting = false
 		})

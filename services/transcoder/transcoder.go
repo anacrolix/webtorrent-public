@@ -12,13 +12,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"resenje.org/singleflight"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/anacrolix/log"
-	"github.com/anacrolix/missinggo"
-	"github.com/anacrolix/missinggo/pubsub"
+	"github.com/anacrolix/missinggo/v2/pubsub"
 	"github.com/anacrolix/missinggo/v2/resource"
 	"github.com/dustin/go-humanize"
 	"nhooyr.io/websocket"
@@ -96,7 +96,7 @@ func progressUpdater(op *operation) func(func(*Progress)) {
 	}
 }
 
-func (t *Transcoder) transcode(outputName, inputURL string, opts []string) (err error) {
+func (t *Transcoder) transcode(ctx context.Context, outputName, inputURL string, opts []string) (err error) {
 	op := &operation{
 		sendEvent: func() { t.events.Publish(struct{}{}) },
 	}
@@ -115,18 +115,28 @@ func (t *Transcoder) transcode(outputName, inputURL string, opts []string) (err 
 
 	tempFilePath := outputFilePath + ".input"
 	outputLogFilePath := outputFilePath + ".log"
-	err = transcode(inputURL, tempFilePath, outputLogFilePath, outputName, ffmpegArgs(
+	err = transcode(
+		ctx,
+		inputURL,
 		tempFilePath,
-		t.progressListener.Addr().String(),
+		outputLogFilePath,
 		outputName,
-		outputFilePath,
-		opts,
-	), progressUpdater(op))
+		ffmpegArgs(
+			tempFilePath,
+			t.progressListener.Addr().String(),
+			outputName,
+			outputFilePath,
+			opts,
+		),
+		progressUpdater(op),
+	)
 	if err != nil {
+		if ctx.Err() != nil {
+			os.Remove(outputLogFilePath)
+		}
 		return
 	}
-	// Only remove the output log file if the operation succeeded. Note that
-	// it is cached later.
+	// Only remove the output log file if the operation succeeded. Note that it is cached later.
 	defer os.Remove(outputLogFilePath)
 
 	log.Printf("completed %s: size: %s", outputName, func() string {
@@ -153,7 +163,7 @@ type operation struct {
 }
 
 type Transcoder struct {
-	sf missinggo.SingleFlight
+	sf singleflight.Group[string, struct{}]
 	RP resource.Provider
 	// Where ffmpeg creates files.
 	OutputDir        string
@@ -161,7 +171,7 @@ type Transcoder struct {
 	progressHandler  progressHandler
 	mu               sync.Mutex
 	operations       map[string]*operation
-	events           *pubsub.PubSub
+	events           pubsub.PubSub[struct{}]
 }
 
 func (t *Transcoder) Init() {
@@ -195,7 +205,6 @@ func (t *Transcoder) Init() {
 		op.sendEvent()
 	}
 
-	t.events = pubsub.NewPubSub()
 	go func() {
 		panic(http.Serve(t.progressListener, &t.progressHandler))
 	}()
@@ -301,20 +310,23 @@ func (t *Transcoder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		t.serveEvents(w, r, outputName, outputLoc)
 		return
 	}
-	// Ensure no-one else is operating on this outputName.
-	sf := t.sf.Lock(outputName)
 	for {
 		if rs := resource.ReadSeeker(outputLoc); rs != nil {
-			// We got a handle to it in the storage, it should be complete and
-			// ready to go.
-			sf.Unlock()
 			http.ServeContent(w, r, outputName, time.Time{}, rs)
 			return
 		}
-		err = t.transcode(outputName, i, opts)
+		_, _, err := t.sf.Do(
+			r.Context(),
+			outputName,
+			func(ctx context.Context) (_ struct{}, err error) {
+				err = t.transcode(ctx, outputName, i, opts)
+				if err != nil {
+					log.Printf("error transcoding %q: %s", outputName, err)
+				}
+				return
+			},
+		)
 		if err != nil {
-			sf.Unlock()
-			log.Printf("error transcoding %q: %s", outputName, err)
 			http.Error(w, "error transcoding", http.StatusInternalServerError)
 			return
 		}

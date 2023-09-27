@@ -15,6 +15,7 @@ require (
 	github.com/frankban/quicktest v1.14.4
 	github.com/stretchr/testify v1.8.0
 	nhooyr.io/websocket v1.8.7
+	resenje.org/singleflight v0.4.0
 )
 
 require (
