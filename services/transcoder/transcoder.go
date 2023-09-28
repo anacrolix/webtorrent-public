@@ -3,7 +3,6 @@ package transcoder
 import (
 	"context"
 	"crypto/md5"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -12,8 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"resenje.org/singleflight"
-	"strconv"
 	"sync"
 	"time"
 
@@ -23,6 +20,7 @@ import (
 	"github.com/dustin/go-humanize"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
+	"resenje.org/singleflight"
 )
 
 var hashStringsSize = md5.Size
@@ -39,7 +37,7 @@ func hashStrings(ss []string) []byte {
 	return h.Sum(b[:0])
 }
 
-func (t *Transcoder) cacheFile(name string) (err error) {
+func (t *Transcoder) cacheFile(name string, progress func(f float64)) (err error) {
 	dstLoc, err := t.RP.NewInstance(filepath.Base(name))
 	if err != nil {
 		return
@@ -49,7 +47,11 @@ func (t *Transcoder) cacheFile(name string) (err error) {
 		return
 	}
 	defer srcFile.Close()
-	return dstLoc.Put(srcFile)
+	var pw progressWriter
+	pw.callback = progress
+	pw.total, _ = srcFile.Seek(0, io.SeekEnd)
+	srcFile.Seek(0, io.SeekStart)
+	return dstLoc.Put(io.TeeReader(srcFile, &pw))
 }
 
 func reencodeURL(s string) string {
@@ -86,17 +88,6 @@ func ffmpegArgs(
 		}).String(),
 		"-y", outputFilePath)
 	return
-}
-
-func (op *operation) updateProgress(f func(p *Progress)) {
-	op.mu.Lock()
-	defer op.mu.Unlock()
-	before := op.Progress
-	f(&op.Progress)
-	if op.Progress != before {
-		// log.Printf("%#v", op.Progress)
-		op.sendEvent()
-	}
 }
 
 func (t *Transcoder) transcode(
@@ -156,25 +147,23 @@ func (t *Transcoder) transcode(
 		return humanize.Bytes(uint64(fi.Size()))
 	}())
 	started := time.Now()
-	go t.cacheFile(outputLogFilePath)
+	go t.cacheFile(outputLogFilePath, func(float64) {})
 	op.updateProgress(func(p *Progress) {
 		p.Storing = true
 	})
 	defer op.updateProgress(func(p *Progress) {
 		p.Storing = false
 	})
-	err = t.cacheFile(outputFilePath)
+	err = t.cacheFile(outputFilePath, func(f float64) {
+		op.updateProgress(func(p *Progress) {
+			p.StoreProgress.Set(f)
+		})
+	})
 	if err != nil {
 		return
 	}
 	log.Printf("stored files for %s in %s", outputName, time.Since(started))
 	return
-}
-
-type operation struct {
-	mu        sync.Mutex
-	Progress  Progress
-	sendEvent func()
 }
 
 type Transcoder struct {
@@ -223,52 +212,6 @@ func (t *Transcoder) Init() {
 	go func() {
 		panic(http.Serve(t.progressListener, &t.progressHandler))
 	}()
-}
-
-type Progress struct {
-	Ready            bool
-	Downloading      bool
-	DownloadProgress float64
-	Probing          bool
-	Converting       bool
-	ConvertPos       time.Duration
-	InputDuration    time.Duration
-	Queued           bool
-	Storing          bool
-}
-
-const progressInfoOutTimeKey = "out_time_ms"
-
-func parseProgressInfoOutTime(s string) time.Duration {
-	i64, err := strconv.ParseInt(s, 0, 64)
-	if err != nil && s != "" {
-		panic(err)
-	}
-	return time.Duration(i64) * time.Microsecond
-}
-
-func (t *Transcoder) getProgress(outputLoc resource.Instance, outputName string) (ret Progress) {
-	if resource.Exists(outputLoc) {
-		ret.Ready = true
-		return
-	}
-	t.mu.Lock()
-	op := t.operations[outputName]
-	t.mu.Unlock()
-	if op == nil {
-		return
-	}
-	op.mu.Lock()
-	defer op.mu.Unlock()
-	return op.Progress
-}
-
-func (t *Transcoder) serveProgress(w http.ResponseWriter, r *http.Request, outputName string, outputLoc resource.Instance) {
-	p := t.getProgress(outputLoc, outputName)
-	err := json.NewEncoder(w).Encode(p)
-	if err != nil {
-		log.Print(err)
-	}
 }
 
 func (t *Transcoder) serveEvents(w http.ResponseWriter, r *http.Request, outputName string, outputLoc resource.Instance) {

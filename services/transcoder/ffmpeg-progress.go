@@ -3,7 +3,9 @@ package transcoder
 import (
 	"bufio"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/anacrolix/log"
 )
@@ -30,4 +32,14 @@ func (me *progressHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("error scanning ffmpeg progress: %s", err)
 	}
 	me.onProgress(id)
+}
+
+const progressInfoOutTimeKey = "out_time_ms"
+
+func parseProgressInfoOutTime(s string) time.Duration {
+	i64, err := strconv.ParseInt(s, 0, 64)
+	if err != nil && s != "" {
+		panic(err)
+	}
+	return time.Duration(i64) * time.Microsecond
 }

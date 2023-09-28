@@ -2,9 +2,9 @@ package transcoder
 
 import (
 	"encoding/json"
-	qt "github.com/frankban/quicktest"
 	"testing"
 
+	qt "github.com/frankban/quicktest"
 	"github.com/stretchr/testify/require"
 )
 

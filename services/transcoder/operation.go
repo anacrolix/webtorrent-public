@@ -14,6 +14,7 @@ import (
 	"github.com/anacrolix/ffprobe"
 	"github.com/anacrolix/log"
 	"github.com/anacrolix/missinggo/perf"
+	"github.com/anacrolix/sync"
 )
 
 func probeDuration(input string) (d time.Duration, err error) {
@@ -131,4 +132,21 @@ func transcode(
 		p.Converting = true
 	})
 	return cmd.Run()
+}
+
+type operation struct {
+	mu        sync.Mutex
+	Progress  Progress
+	sendEvent func()
+}
+
+func (op *operation) updateProgress(f func(p *Progress)) {
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	before := op.Progress
+	f(&op.Progress)
+	if op.Progress != before {
+		// log.Printf("%#v", op.Progress)
+		op.sendEvent()
+	}
 }

@@ -5,10 +5,12 @@ go 1.19
 require (
 	github.com/anacrolix/envpprof v1.2.1
 	github.com/anacrolix/ffprobe v1.0.0
+	github.com/anacrolix/generics v0.0.0-20221221005542-ac1d5b02b8a3
 	github.com/anacrolix/log v0.13.2-0.20221123232138-02e2764801c3
 	github.com/anacrolix/missinggo v1.3.0
 	github.com/anacrolix/missinggo/perf v1.0.0
 	github.com/anacrolix/missinggo/v2 v2.7.1
+	github.com/anacrolix/sync v0.4.0
 	github.com/anacrolix/tagflag v1.3.0
 	github.com/anacrolix/torrent v1.48.1-0.20230103142631-c20f73d53e9f
 	github.com/dustin/go-humanize v1.0.0
