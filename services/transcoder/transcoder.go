@@ -237,18 +237,44 @@ func (t *Transcoder) serveEvents(w http.ResponseWriter, r *http.Request, outputN
 	for {
 		select {
 		case v, ok := <-sub.Values:
-			// Last I checked the pubsub just receives dummy values, to notify of an event on all
-			// operations.
-			if v != struct{}{} {
-				panic(v)
-			}
 			if !ok {
 				panic("subscription closed")
 			}
+			t.assertEventValue(v)
+			// We don't care what the events are so throw away as many as we can to minimize
+			// progress writes. TODO: Ignore events that aren't related to the outputName.
+			t.drainEventSub(sub)
 			writeProgress()
+			select {
+			case <-time.After(100 * time.Millisecond):
+			case <-r.Context().Done():
+				return
+			}
 		case <-r.Context().Done():
 			return
 		}
+	}
+}
+
+func (t *Transcoder) drainEventSub(sub *pubsub.Subscription[struct{}]) {
+	for {
+		select {
+		case v, ok := <-sub.Values:
+			if !ok {
+				return
+			}
+			t.assertEventValue(v)
+		default:
+			return
+		}
+	}
+}
+
+func (t *Transcoder) assertEventValue(value any) {
+	// Last I checked the pubsub just receives dummy values, to notify of an event on all
+	// operations.
+	if value != struct{}{} {
+		panic(value)
 	}
 }
 
