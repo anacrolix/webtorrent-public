@@ -196,7 +196,11 @@ func (t *Transcoder) Init() {
 			return
 		}
 		op.updateProgress(func(p *Progress) {
-			p.ConvertPos = parseProgressInfoOutTime(value)
+			var err error
+			p.ConvertPos, err = parseProgressInfoOutTime(value)
+			if err != nil {
+				log.Levelf(log.Warning, "error parsing out_time_ms for operation %q: %s", id, err)
+			}
 		})
 	}
 	t.progressHandler.onProgress = func(id string) {

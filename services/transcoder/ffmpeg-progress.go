@@ -36,10 +36,11 @@ func (me *progressHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 const progressInfoOutTimeKey = "out_time_ms"
 
-func parseProgressInfoOutTime(s string) time.Duration {
+func parseProgressInfoOutTime(s string) (ok time.Duration, err error) {
 	i64, err := strconv.ParseInt(s, 0, 64)
-	if err != nil && s != "" {
-		panic(err)
+	if s == "" {
+		err = nil
 	}
-	return time.Duration(i64) * time.Microsecond
+	ok = time.Duration(i64) * time.Microsecond
+	return
 }
