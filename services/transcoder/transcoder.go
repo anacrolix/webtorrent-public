@@ -218,7 +218,12 @@ func (t *Transcoder) Init() {
 	}()
 }
 
-func (t *Transcoder) serveEvents(w http.ResponseWriter, r *http.Request, outputName string, outputLoc resource.Instance) {
+func (t *Transcoder) serveEvents(
+	w http.ResponseWriter,
+	r *http.Request,
+	outputName string,
+	outputLoc resource.Instance,
+) {
 	sub := t.events.Subscribe()
 	defer sub.Close()
 	conn, err := websocket.Accept(w, r, nil)
@@ -227,17 +232,22 @@ func (t *Transcoder) serveEvents(w http.ResponseWriter, r *http.Request, outputN
 		return
 	}
 	defer conn.Close(websocket.StatusGoingAway, "deferred close")
-	writeProgress := func() {
+	writeProgress := func() bool {
 		p := t.getProgress(outputLoc, outputName)
 		err := wsjson.Write(context.TODO(), conn, p)
 		switch err {
 		case io.ErrClosedPipe:
+			return false
 		case nil:
+			return true
 		default:
 			log.Printf("error encoding transcoder event: %s", err)
+			return false
 		}
 	}
-	writeProgress()
+	if !writeProgress() {
+		return
+	}
 	for {
 		select {
 		case v, ok := <-sub.Values:
@@ -248,7 +258,9 @@ func (t *Transcoder) serveEvents(w http.ResponseWriter, r *http.Request, outputN
 			// We don't care what the events are so throw away as many as we can to minimize
 			// progress writes. TODO: Ignore events that aren't related to the outputName.
 			t.drainEventSub(sub)
-			writeProgress()
+			if !writeProgress() {
+				return
+			}
 			select {
 			case <-time.After(100 * time.Millisecond):
 			case <-r.Context().Done():
