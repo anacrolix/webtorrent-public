@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/anacrolix/missinggo/v2/panicif"
 	"io"
 	"net/http"
 	"os"
@@ -54,8 +55,12 @@ func (me *progressWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-func downloadInput(url, to string, progress func(progress float64)) error {
-	resp, err := http.Get(url)
+func downloadInput(ctx context.Context, url, to string, progress func(progress float64)) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	panicif.Err(err)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -63,18 +68,35 @@ func downloadInput(url, to string, progress func(progress float64)) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("got status code %d", resp.StatusCode)
 	}
-	f, err := os.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- func() error {
+			f, err := os.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+			if err != nil {
+				return err
+			}
+			go func() {
+				<-ctx.Done()
+				f.Close()
+			}()
+			_, err = io.Copy(f, io.TeeReader(resp.Body, &progressWriter{
+				total:    resp.ContentLength,
+				callback: progress,
+			}))
+			if err != nil {
+				return err
+			}
+			return f.Close()
+		}()
+	}()
+	select {
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case err := <-errChan:
+		// Should we return the context error here instead if it exists (cmp.Or) or let the caller
+		// figure that out?
 		return err
 	}
-	_, err = io.Copy(f, io.TeeReader(resp.Body, &progressWriter{
-		total:    resp.ContentLength,
-		callback: progress,
-	}))
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func updateDownloadProgress(f func(func(*Progress))) func(float64) {
@@ -95,8 +117,8 @@ func transcode(
 		p.Downloading = true
 	})
 	defer os.Remove(tempFilePath)
-	if err := downloadInput(url, tempFilePath, updateDownloadProgress(updateProgress)); err != nil {
-		return fmt.Errorf("error downloading %q: %s", url, err)
+	if err := downloadInput(ctx, url, tempFilePath, updateDownloadProgress(updateProgress)); err != nil {
+		return fmt.Errorf("error downloading %q: %w", url, err)
 	}
 	updateProgress(func(p *Progress) {
 		p.Downloading = false

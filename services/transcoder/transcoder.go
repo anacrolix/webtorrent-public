@@ -228,20 +228,28 @@ func (t *Transcoder) serveEvents(
 	defer sub.Close()
 	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
+		// Accept above sets a http error already.
 		log.Printf("error accepting transcoder events websocket: %v", err)
 		return
 	}
+	ctx := conn.CloseRead(r.Context())
 	defer conn.Close(websocket.StatusGoingAway, "deferred close")
 	writeProgress := func() bool {
-		p := t.getProgress(outputLoc, outputName)
-		err := wsjson.Write(context.TODO(), conn, p)
+		pOpt := t.getProgress(outputLoc, outputName)
+		if !pOpt.Ok {
+			return false
+		}
+		p := pOpt.Value
+		err := wsjson.Write(ctx, conn, p)
 		switch err {
 		case io.ErrClosedPipe:
 			return false
 		case nil:
 			return true
 		default:
-			log.Printf("error encoding transcoder event: %s", err)
+			if ctx.Err() == nil {
+				log.Printf("error encoding transcoder event: %v", err)
+			}
 			return false
 		}
 	}
@@ -263,10 +271,10 @@ func (t *Transcoder) serveEvents(
 			}
 			select {
 			case <-time.After(100 * time.Millisecond):
-			case <-r.Context().Done():
+			case <-ctx.Done():
 				return
 			}
-		case <-r.Context().Done():
+		case <-ctx.Done():
 			return
 		}
 	}
