@@ -4,22 +4,20 @@ import (
 	"encoding/json"
 	"testing"
 
-	qt "github.com/frankban/quicktest"
-	"github.com/stretchr/testify/require"
+	"github.com/go-quicktest/qt"
 )
 
 func TestJSONNaN(t *testing.T) {
 	var zero float64
 	b, err := json.Marshal(float64(0) / zero)
-	require.Error(t, err)
-	require.Empty(t, b)
+	qt.Assert(t, qt.IsNotNil(err))
+	qt.Assert(t, qt.HasLen(b, 0))
 }
 
 func TestHashStrings(t *testing.T) {
-	qtc := qt.New(t)
 	partsHash := hashStrings([]string{"h", "el", "lo"})
 	oneHash := hashStrings([]string{"hello"})
-	qtc.Check(partsHash, qt.Not(qt.DeepEquals), oneHash)
-	qtc.Check(partsHash, qt.HasLen, hashStringsSize)
-	qtc.Check(oneHash, qt.HasLen, hashStringsSize)
+	qt.Check(t, qt.Not(qt.DeepEquals(partsHash, oneHash)))
+	qt.Check(t, qt.HasLen(partsHash, hashStringsSize))
+	qt.Check(t, qt.HasLen(oneHash, hashStringsSize))
 }
